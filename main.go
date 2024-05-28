@@ -41,13 +41,13 @@ func main() {
 	fileserverHandler := http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))
 	mux.Handle("/app/*", apiConfig.middlewareMetricsInc(fileserverHandler))
 
-	mux.HandleFunc("/healthz", func(writer http.ResponseWriter, req *http.Request) {
+	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, req *http.Request) {
 		writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		writer.WriteHeader(200)
-		writer.Write([]byte("OK"))
+		writer.Write([]byte("OK\n"))
 	})
 
-	mux.HandleFunc("/metrics", apiConfig.metricsHandler)
+	mux.HandleFunc("GET /metrics", apiConfig.metricsHandler)
 
 	mux.HandleFunc("/reset", apiConfig.resetHandler)
 
