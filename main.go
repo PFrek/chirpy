@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -37,6 +38,62 @@ func (config *apiConfig) resetHandler(writer http.ResponseWriter, req *http.Requ
 	writer.Write([]byte("Fileserver hits counter reset to 0"))
 }
 
+func (config *apiConfig) returnErrorResponse(errorMsg string, status int, writer http.ResponseWriter) {
+	type errBody struct {
+		Error string `json:"error"`
+	}
+	respBody := errBody{
+		Error: errorMsg,
+	}
+
+	dat, err := json.Marshal(respBody)
+	if err != nil {
+		log.Printf("Error marshalling JSON: %s", err)
+		writer.WriteHeader(500)
+		return
+	}
+
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(status)
+	writer.Write(dat)
+}
+
+func (config *apiConfig) chirpValidationHandler(writer http.ResponseWriter, req *http.Request) {
+	type parameters struct {
+		Body string `json:"body"`
+	}
+
+	decoder := json.NewDecoder(req.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		config.returnErrorResponse("Something went wrong", 500, writer)
+		return
+	}
+
+	if len(params.Body) > 140 {
+		config.returnErrorResponse("Chirp is too long", 400, writer)
+		return
+	}
+
+	respBody := struct {
+		Valid bool `json:"valid"`
+	}{
+		Valid: true,
+	}
+
+	dat, err := json.Marshal(respBody)
+	if err != nil {
+		log.Printf("Error marshalling JSON: %s", err)
+		writer.WriteHeader(500)
+		return
+	}
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(200)
+	writer.Write(dat)
+}
+
 func main() {
 	const filepathRoot = "."
 	const port = "8080"
@@ -53,9 +110,11 @@ func main() {
 		writer.Write([]byte("OK\n"))
 	})
 
-	mux.HandleFunc("GET /admin/metrics", apiConfig.metricsHandler)
+	mux.HandleFunc("POST /api/validate_chirp", apiConfig.chirpValidationHandler)
 
 	mux.HandleFunc("/api/reset", apiConfig.resetHandler)
+
+	mux.HandleFunc("GET /admin/metrics", apiConfig.metricsHandler)
 
 	server := &http.Server{
 		Addr:    ":" + port,
