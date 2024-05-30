@@ -1,8 +1,10 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/PFrek/chirpy/api"
 	"github.com/PFrek/chirpy/db"
@@ -12,6 +14,16 @@ func main() {
 	const filepathRoot = "."
 	const port = "8080"
 	const dbPath = "database.json"
+
+	dbg := flag.Bool("debug", false, "Enable debug mode")
+	flag.Parse()
+
+	if dbg != nil && *dbg == true {
+		err := os.Remove(dbPath)
+		if err != nil {
+			log.Printf("Debug error: %v\n", err)
+		}
+	}
 
 	var apiConfig api.ApiConfig
 	db, err := db.NewDB(dbPath)
@@ -35,6 +47,8 @@ func main() {
 	mux.HandleFunc("GET /api/chirps/{id}", apiConfig.GetChirpHandler)
 
 	mux.HandleFunc("POST /api/users", apiConfig.PostUsersHandler)
+	mux.HandleFunc("GET /api/users", apiConfig.GetUsersHandler)
+	mux.HandleFunc("GET /api/users/{id}", apiConfig.GetUserHandler)
 
 	mux.HandleFunc("/api/reset", apiConfig.ResetHandler)
 

@@ -223,3 +223,47 @@ func (db *DB) CreateUser(body string) (User, error) {
 
 	return user, nil
 }
+
+func (db *DB) GetUsers() ([]User, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return []User{}, err
+	}
+
+	users := []User{}
+	for _, user := range dbStruct.Users {
+		users = append(users, user)
+	}
+
+	slices.SortFunc(users, func(a, b User) int {
+		return cmp.Compare(a.Id, b.Id)
+	})
+
+	return users, nil
+}
+
+func (db *DB) GetUserById(id int) (User, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+
+	var user *User
+	for _, u := range dbStruct.Users {
+		if u.Id == id {
+			user = &u
+		}
+	}
+
+	if user == nil {
+		return User{}, errors.New("not found")
+	}
+
+	return *user, nil
+}
