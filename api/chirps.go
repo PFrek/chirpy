@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
-func (config *ApiConfig) ChirpsPostHandler(writer http.ResponseWriter, req *http.Request) {
+func (config *ApiConfig) PostChirpsHandler(writer http.ResponseWriter, req *http.Request) {
 	type parameters struct {
 		Body string `json:"body"`
 	}
@@ -36,7 +38,7 @@ func (config *ApiConfig) ChirpsPostHandler(writer http.ResponseWriter, req *http
 	RespondWithJSON(writer, 201, chirp)
 }
 
-func (config *ApiConfig) ChirpsGetHandler(writer http.ResponseWriter, req *http.Request) {
+func (config *ApiConfig) GetChirpsHandler(writer http.ResponseWriter, req *http.Request) {
 	chirps, err := config.DB.GetChirps()
 	if err != nil {
 		RespondWithError(writer, 400, err.Error())
@@ -44,4 +46,25 @@ func (config *ApiConfig) ChirpsGetHandler(writer http.ResponseWriter, req *http.
 	}
 
 	RespondWithJSON(writer, 200, chirps)
+}
+
+func (config *ApiConfig) GetChirpHandler(writer http.ResponseWriter, req *http.Request) {
+	id, err := strconv.Atoi(req.PathValue("id"))
+	if err != nil {
+		RespondWithError(writer, 400, "Invalid [id] value in path")
+		return
+	}
+
+	chirp, err := config.DB.GetChirpById(id)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			RespondWithError(writer, 404, "Not Found")
+			return
+		}
+
+		RespondWithError(writer, 500, err.Error())
+		return
+	}
+
+	RespondWithJSON(writer, 200, chirp)
 }

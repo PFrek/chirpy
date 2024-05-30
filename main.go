@@ -30,8 +30,9 @@ func main() {
 		writer.Write([]byte("OK\n"))
 	})
 
-	mux.HandleFunc("POST /api/chirps", apiConfig.ChirpsPostHandler)
-	mux.HandleFunc("GET /api/chirps", apiConfig.ChirpsGetHandler)
+	mux.HandleFunc("POST /api/chirps", apiConfig.PostChirpsHandler)
+	mux.HandleFunc("GET /api/chirps", apiConfig.GetChirpsHandler)
+	mux.HandleFunc("GET /api/chirps/{id}", apiConfig.GetChirpHandler)
 
 	mux.HandleFunc("/api/reset", apiConfig.ResetHandler)
 
