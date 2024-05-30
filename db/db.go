@@ -17,8 +17,14 @@ type Chirp struct {
 	Body string `json:"body"`
 }
 
+type User struct {
+	Id    int    `json:"id"`
+	Email string `json:"email"`
+}
+
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
+	Users  map[int]User  `json:"users"`
 }
 
 type DB struct {
@@ -43,7 +49,17 @@ func NewDB(path string) (*DB, error) {
 func (db *DB) ensureDB() error {
 	_, err := os.ReadFile(db.path)
 	if errors.Is(err, os.ErrNotExist) {
-		err = os.WriteFile(db.path, []byte("{\"chirps\":{}}"), 0644)
+		dbStruct := DBStructure{
+			Chirps: make(map[int]Chirp),
+			Users:  make(map[int]User),
+		}
+
+		json, err := json.Marshal(dbStruct)
+		if err != nil {
+			return errors.New(fmt.Sprintf("Failed to marshal new db's contents: %v", err))
+		}
+
+		err = os.WriteFile(db.path, json, 0644)
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return errors.New(fmt.Sprintf("Failed to load/create db: %v", err))
@@ -52,11 +68,22 @@ func (db *DB) ensureDB() error {
 	return nil
 }
 
-func (db DBStructure) getNextId() int {
+func (db DBStructure) getNextChirpId() int {
 	maxId := 0
 	for _, chirp := range db.Chirps {
 		if chirp.Id > maxId {
 			maxId = chirp.Id
+		}
+	}
+
+	return maxId + 1
+}
+
+func (db DBStructure) getNextUserId() int {
+	maxId := 0
+	for _, user := range db.Users {
+		if user.Id > maxId {
+			maxId = user.Id
 		}
 	}
 
@@ -115,7 +142,7 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 	}
 
 	chirp := Chirp{
-		Id:   dbStruct.getNextId(),
+		Id:   dbStruct.getNextChirpId(),
 		Body: body,
 	}
 
@@ -171,4 +198,28 @@ func (db *DB) GetChirpById(id int) (Chirp, error) {
 	}
 
 	return *chirp, nil
+}
+
+func (db *DB) CreateUser(body string) (User, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+
+	user := User{
+		Id:    dbStruct.getNextUserId(),
+		Email: body,
+	}
+
+	dbStruct.Users[user.Id] = user
+
+	err = db.writeDB(*dbStruct)
+	if err != nil {
+		return User{}, err
+	}
+
+	return user, nil
 }
