@@ -22,6 +22,38 @@ func (config *ApiConfig) PostLoginHandler(writer http.ResponseWriter, req *http.
 		Email    string `json:"email"`
 	}
 
+	decoder := json.NewDecoder(req.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		RespondWithError(writer, 500, "Something went wrong")
+		return
+	}
+
+	user, err := config.DB.GetUserByEmail(params.Email)
+	if err != nil {
+		if errors.Is(err, db.NotFoundError{Model: "User"}) {
+			RespondWithError(writer, 401, "Invalid email or password")
+			return
+		}
+
+		RespondWithError(writer, 500, err.Error())
+		return
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(params.Password))
+	if err != nil {
+		RespondWithError(writer, 401, "Invalid email or password")
+		return
+	}
+
+	responseUser := UserResponse{
+		Id:    user.Id,
+		Email: user.Email,
+	}
+
+	RespondWithJSON(writer, 200, responseUser)
 }
 
 func (config *ApiConfig) PostUsersHandler(writer http.ResponseWriter, req *http.Request) {
