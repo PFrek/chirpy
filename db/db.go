@@ -18,8 +18,9 @@ type Chirp struct {
 }
 
 type User struct {
-	Id    int    `json:"id"`
-	Email string `json:"email"`
+	Id       int    `json:"id"`
+	Email    string `json:"email"`
+	Password string `json:"password"`
 }
 
 type DBStructure struct {
@@ -40,7 +41,7 @@ func NewDB(path string) (*DB, error) {
 
 	err := db.ensureDB()
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("Unable to create new DB: %v", err))
+		return nil, fmt.Errorf("Unable to create new DB: %v", err)
 	}
 
 	return &db, nil
@@ -56,13 +57,13 @@ func (db *DB) ensureDB() error {
 
 		json, err := json.Marshal(dbStruct)
 		if err != nil {
-			return errors.New(fmt.Sprintf("Failed to marshal new db's contents: %v", err))
+			return fmt.Errorf("Failed to marshal new db's contents: %v", err)
 		}
 
 		err = os.WriteFile(db.path, json, 0644)
 	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return errors.New(fmt.Sprintf("Failed to load/create db: %v", err))
+		return fmt.Errorf("Failed to load/create db: %v", err)
 	}
 
 	return nil
@@ -98,13 +99,13 @@ func (db *DB) loadDB() (*DBStructure, error) {
 
 	file, err := os.ReadFile(db.path)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("DB: Failed to load db: %v", err))
+		return nil, fmt.Errorf("DB: Failed to load db: %v", err)
 	}
 
 	var dbStruct DBStructure
 	err = json.Unmarshal(file, &dbStruct)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("DB: Failed to unmarshal db: %v", err))
+		return nil, fmt.Errorf("DB: Failed to unmarshal db: %v", err)
 	}
 	if db == nil {
 		return nil, errors.New("DB: Failed to unmarshal db: Empty")
@@ -121,12 +122,12 @@ func (db *DB) writeDB(dbStruct DBStructure) error {
 
 	json, err := json.Marshal(dbStruct)
 	if err != nil {
-		return errors.New(fmt.Sprintf("DB: Failed to marshal db: %v", err))
+		return fmt.Errorf("DB: Failed to marshal db: %v", err)
 	}
 
 	err = os.WriteFile(db.path, json, 0644)
 	if err != nil {
-		return errors.New(fmt.Sprintf("DB: Failed to write to file: %v", err))
+		return fmt.Errorf("DB: Failed to write to file: %v", err)
 	}
 
 	return nil
@@ -194,13 +195,13 @@ func (db *DB) GetChirpById(id int) (Chirp, error) {
 	}
 
 	if chirp == nil {
-		return Chirp{}, errors.New("not found")
+		return Chirp{}, NotFoundError{Model: "Chirp"}
 	}
 
 	return *chirp, nil
 }
 
-func (db *DB) CreateUser(body string) (User, error) {
+func (db *DB) CreateUser(email string, password string) (User, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -209,9 +210,16 @@ func (db *DB) CreateUser(body string) (User, error) {
 		return User{}, err
 	}
 
+	for _, user := range dbStruct.Users {
+		if user.Email == email {
+			return User{}, ExistingEmailError{}
+		}
+	}
+
 	user := User{
-		Id:    dbStruct.getNextUserId(),
-		Email: body,
+		Id:       dbStruct.getNextUserId(),
+		Email:    email,
+		Password: password,
 	}
 
 	dbStruct.Users[user.Id] = user
@@ -221,7 +229,12 @@ func (db *DB) CreateUser(body string) (User, error) {
 		return User{}, err
 	}
 
-	return user, nil
+	response := User{
+		Id:    user.Id,
+		Email: user.Email,
+	}
+
+	return response, nil
 }
 
 func (db *DB) GetUsers() ([]User, error) {
@@ -262,8 +275,45 @@ func (db *DB) GetUserById(id int) (User, error) {
 	}
 
 	if user == nil {
-		return User{}, errors.New("not found")
+		return User{}, NotFoundError{Model: "User"}
 	}
 
 	return *user, nil
+}
+
+func (db *DB) GetUserByEmail(email string) (User, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+
+	var user *User
+	for _, u := range dbStruct.Users {
+		if u.Email == email {
+			user = &u
+		}
+	}
+
+	if user == nil {
+		return User{}, NotFoundError{Model: "User"}
+	}
+
+	return *user, nil
+}
+
+type ExistingEmailError struct{}
+
+func (err ExistingEmailError) Error() string {
+	return fmt.Sprintf("Email already in use")
+}
+
+type NotFoundError struct {
+	Model string
+}
+
+func (err NotFoundError) Error() string {
+	return fmt.Sprintf("DB Error: %s not found", err.Model)
 }

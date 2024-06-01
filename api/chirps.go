@@ -2,10 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"github.com/PFrek/chirpy/db"
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 )
 
 func (config *ApiConfig) PostChirpsHandler(writer http.ResponseWriter, req *http.Request) {
@@ -57,7 +58,7 @@ func (config *ApiConfig) GetChirpHandler(writer http.ResponseWriter, req *http.R
 
 	chirp, err := config.DB.GetChirpById(id)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, db.NotFoundError{Model: "Chirp"}) {
 			RespondWithError(writer, 404, "Not Found")
 			return
 		}
