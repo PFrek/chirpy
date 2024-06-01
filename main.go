@@ -2,15 +2,21 @@ package main
 
 import (
 	"flag"
+	"github.com/PFrek/chirpy/api"
+	"github.com/PFrek/chirpy/db"
+	"github.com/joho/godotenv"
 	"log"
 	"net/http"
 	"os"
-
-	"github.com/PFrek/chirpy/api"
-	"github.com/PFrek/chirpy/db"
 )
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	jwtSecret := os.Getenv("JWT_SECRET")
+
 	const filepathRoot = "."
 	const port = "8080"
 	const dbPath = "database.json"
@@ -31,6 +37,7 @@ func main() {
 		log.Fatal(err)
 	}
 	apiConfig.DB = db
+	apiConfig.JWTSecret = jwtSecret
 
 	mux := http.NewServeMux()
 	fileserverHandler := http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))

@@ -13,6 +13,7 @@ import (
 type ApiConfig struct {
 	fileserverHits int
 	DB             *db.DB
+	JWTSecret      string
 }
 
 func (config *ApiConfig) MiddlewareMetricsInc(next http.Handler) http.Handler {
