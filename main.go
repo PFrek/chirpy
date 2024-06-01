@@ -56,6 +56,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", apiConfig.PostLoginHandler)
 
 	mux.HandleFunc("POST /api/users", apiConfig.PostUsersHandler)
+	mux.HandleFunc("PUT /api/users", apiConfig.PutUsersHandler)
 	mux.HandleFunc("GET /api/users", apiConfig.GetUsersHandler)
 	mux.HandleFunc("GET /api/users/{id}", apiConfig.GetUserHandler)
 

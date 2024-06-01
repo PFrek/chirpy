@@ -237,6 +237,46 @@ func (db *DB) CreateUser(email string, password string) (User, error) {
 	return response, nil
 }
 
+func (db *DB) UpdateUser(info User) (User, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+
+	var existingUser *User
+	for _, user := range dbStruct.Users {
+		if user.Id == info.Id {
+			existingUser = new(User)
+			existingUser = &user
+		} else {
+			if user.Email == info.Email {
+				return User{}, ExistingEmailError{}
+			}
+		}
+	}
+
+	if existingUser == nil {
+		return User{}, NotFoundError{"User"}
+	}
+
+	dbStruct.Users[info.Id] = info
+
+	err = db.writeDB(*dbStruct)
+	if err != nil {
+		return User{}, err
+	}
+
+	response := User{
+		Id:    info.Id,
+		Email: info.Email,
+	}
+
+	return response, nil
+}
+
 func (db *DB) GetUsers() ([]User, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()

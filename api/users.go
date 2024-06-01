@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/PFrek/chirpy/db"
@@ -21,9 +22,9 @@ type UserResponse struct {
 
 func (config *ApiConfig) PostLoginHandler(writer http.ResponseWriter, req *http.Request) {
 	type parameters struct {
-		Password         string  `json:"password"`
-		Email            string  `json:"email"`
-		ExpiresInSeconds *string `json:"expires_in_seconds"`
+		Password         string `json:"password"`
+		Email            string `json:"email"`
+		ExpiresInSeconds *int   `json:"expires_in_seconds"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
@@ -55,27 +56,25 @@ func (config *ApiConfig) PostLoginHandler(writer http.ResponseWriter, req *http.
 	// JWT
 	if params.ExpiresInSeconds == nil {
 		log.Println("expires_in_seconds not found, set to default 86400 (24hrs)")
-		params.ExpiresInSeconds = new(string)
-		*params.ExpiresInSeconds = "86400"
-	}
-	expiration, err := strconv.Atoi(*params.ExpiresInSeconds)
-	if err != nil {
-		RespondWithError(writer, 400, "Invalid parameter expires_in_seconds")
-		return
+		params.ExpiresInSeconds = new(int)
+		*params.ExpiresInSeconds = 24 * 60 * 60 // 24 hrs in sec
 	}
 
-	if expiration > 86400 {
+	if *params.ExpiresInSeconds > 24*60*60 {
 		log.Println("expires_in_seconds too large, set to default 86400 (24hrs)")
-		expiration = 86400
+		*params.ExpiresInSeconds = 24 * 60 * 60
 	}
+
+	claims := &jwt.RegisteredClaims{
+		Issuer:    "chirpy",
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Duration(*params.ExpiresInSeconds) * time.Second)),
+		Subject:   fmt.Sprintf("%d", user.Id),
+	}
+
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodHS256,
-		jwt.RegisteredClaims{
-			Issuer:    "chirpy",
-			IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-			ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Duration(expiration) * time.Second)),
-			Subject:   fmt.Sprintf("%d", user.Id),
-		},
+		claims,
 	)
 
 	tokenStr, err := token.SignedString([]byte(config.JWTSecret))
@@ -108,7 +107,12 @@ func (config *ApiConfig) PostUsersHandler(writer http.ResponseWriter, req *http.
 	err := decoder.Decode(&params)
 	if err != nil {
 		log.Printf("Error decoding parameters: %s", err)
-		RespondWithError(writer, 500, "Something went wrong")
+		RespondWithError(writer, 400, "Invalid request body")
+		return
+	}
+
+	if len(params.Email) == 0 || len(params.Password) == 0 {
+		RespondWithError(writer, 400, "Email and password are required")
 		return
 	}
 
@@ -134,6 +138,82 @@ func (config *ApiConfig) PostUsersHandler(writer http.ResponseWriter, req *http.
 	}
 
 	RespondWithJSON(writer, 201, responseUser)
+}
+
+func (config *ApiConfig) PutUsersHandler(writer http.ResponseWriter, req *http.Request) {
+	tokenSplit := strings.Split(req.Header.Get("Authorization"), " ")
+
+	if len(tokenSplit) != 2 {
+		RespondWithError(writer, 401, "Unauthorized")
+		return
+	}
+
+	tokenStr := tokenSplit[1]
+
+	token, err := jwt.ParseWithClaims(tokenStr, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(config.JWTSecret), nil
+	})
+	if err != nil {
+		RespondWithError(writer, 401, "Unauthorized")
+		return
+	}
+
+	idStr, err := token.Claims.GetSubject()
+	if err != nil {
+		RespondWithError(writer, 401, "Unauthorized")
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		RespondWithError(writer, 401, "Unauthorized")
+	}
+
+	type parameters struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(req.Body)
+	params := parameters{}
+	err = decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		RespondWithError(writer, 400, "Invalid request body")
+		return
+	}
+
+	if len(params.Email) == 0 || len(params.Password) == 0 {
+		RespondWithError(writer, 400, "Email and password are required")
+		return
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(params.Password), 4)
+	if err != nil {
+		RespondWithError(writer, 500, err.Error())
+		return
+	}
+
+	user, err := config.DB.UpdateUser(db.User{
+		Id:       id,
+		Email:    params.Email,
+		Password: string(hashed),
+	})
+
+	if err != nil {
+		if errors.Is(err, db.ExistingEmailError{}) {
+			RespondWithError(writer, 400, err.Error())
+			return
+		}
+		RespondWithError(writer, 500, err.Error())
+		return
+	}
+
+	responseUser := UserResponse{
+		Id:    user.Id,
+		Email: user.Email,
+	}
+
+	RespondWithJSON(writer, 200, responseUser)
 }
 
 func (config *ApiConfig) GetUsersHandler(writer http.ResponseWriter, req *http.Request) {
