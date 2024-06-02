@@ -1,13 +1,19 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"github.com/PFrek/chirpy/db"
 	"log"
 	"net/http"
 	"slices"
 	"strings"
+	"time"
+
+	"github.com/PFrek/chirpy/db"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 type ApiConfig struct {
@@ -94,4 +100,52 @@ func replaceProfaneWords(chirp string) string {
 	}
 
 	return strings.Join(replacedWords, " ")
+}
+
+func (config *ApiConfig) generateRefreshToken(id int) (string, error) {
+	data := make([]byte, 32)
+	_, err := rand.Read(data)
+	if err != nil {
+		return "", err
+	}
+
+	hex := hex.EncodeToString(data)
+
+	err = config.DB.CreateRefreshToken(hex, id)
+	if err != nil {
+		return "", err
+	}
+
+	return hex, nil
+}
+
+func (config *ApiConfig) generateJWTToken(id int) (string, error) {
+	expiration := time.Duration(1) * time.Hour
+
+	claims := &jwt.RegisteredClaims{
+		Issuer:    "chirpy",
+		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
+		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(expiration)),
+		Subject:   fmt.Sprint(id),
+	}
+
+	token := jwt.NewWithClaims(
+		jwt.SigningMethodHS256,
+		claims,
+	)
+
+	tokenStr, err := token.SignedString([]byte(config.JWTSecret))
+	return tokenStr, err
+
+}
+
+func ExtractAuthorization(req *http.Request) (string, error) {
+	tokenSplit := strings.Split(req.Header.Get("Authorization"), " ")
+
+	if len(tokenSplit) != 2 {
+		return "", errors.New("Unauthorized")
+	}
+
+	tokenStr := tokenSplit[1]
+	return tokenStr, nil
 }

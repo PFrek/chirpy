@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"time"
 )
 
 const DB_PATH = "database.json"
@@ -23,9 +24,16 @@ type User struct {
 	Password string `json:"password"`
 }
 
+type RefreshToken struct {
+	Token     string
+	ExpiresAt time.Time
+	Id        int
+}
+
 type DBStructure struct {
-	Chirps map[int]Chirp `json:"chirps"`
-	Users  map[int]User  `json:"users"`
+	Chirps        map[int]Chirp `json:"chirps"`
+	Users         map[int]User  `json:"users"`
+	RefreshTokens map[string]RefreshToken
 }
 
 type DB struct {
@@ -51,8 +59,9 @@ func (db *DB) ensureDB() error {
 	_, err := os.ReadFile(db.path)
 	if errors.Is(err, os.ErrNotExist) {
 		dbStruct := DBStructure{
-			Chirps: make(map[int]Chirp),
-			Users:  make(map[int]User),
+			Chirps:        make(map[int]Chirp),
+			Users:         make(map[int]User),
+			RefreshTokens: make(map[string]RefreshToken),
 		}
 
 		json, err := json.Marshal(dbStruct)
@@ -128,6 +137,69 @@ func (db *DB) writeDB(dbStruct DBStructure) error {
 	err = os.WriteFile(db.path, json, 0644)
 	if err != nil {
 		return fmt.Errorf("DB: Failed to write to file: %v", err)
+	}
+
+	return nil
+}
+
+func (db *DB) CreateRefreshToken(token string, id int) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+
+	dbStruct.RefreshTokens[token] = RefreshToken{
+		Token:     token,
+		ExpiresAt: time.Now().UTC().Add(60 * 24 * time.Hour),
+		Id:        id,
+	}
+
+	err = db.writeDB(*dbStruct)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (db *DB) ValidateRefreshToken(token string) (int, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return 0, err
+	}
+
+	refreshToken, ok := dbStruct.RefreshTokens[token]
+	if !ok {
+		return 0, errors.New("Refresh token not found")
+	}
+
+	if refreshToken.ExpiresAt.Before(time.Now().UTC()) {
+		return 0, errors.New("Refresh token expired")
+	}
+
+	return refreshToken.Id, nil
+}
+
+func (db *DB) RevokeRefreshToken(token string) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+
+	delete(dbStruct.RefreshTokens, token)
+
+	err = db.writeDB(*dbStruct)
+	if err != nil {
+		return err
 	}
 
 	return nil

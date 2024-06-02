@@ -7,8 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/PFrek/chirpy/db"
 	"github.com/golang-jwt/jwt/v5"
@@ -22,9 +20,8 @@ type UserResponse struct {
 
 func (config *ApiConfig) PostLoginHandler(writer http.ResponseWriter, req *http.Request) {
 	type parameters struct {
-		Password         string `json:"password"`
-		Email            string `json:"email"`
-		ExpiresInSeconds *int   `json:"expires_in_seconds"`
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
@@ -54,46 +51,82 @@ func (config *ApiConfig) PostLoginHandler(writer http.ResponseWriter, req *http.
 	}
 
 	// JWT
-	if params.ExpiresInSeconds == nil {
-		log.Println("expires_in_seconds not found, set to default 86400 (24hrs)")
-		params.ExpiresInSeconds = new(int)
-		*params.ExpiresInSeconds = 24 * 60 * 60 // 24 hrs in sec
+	tokenStr, err := config.generateJWTToken(user.Id)
+	if err != nil {
+		RespondWithError(writer, 500, "Failed to create JWT string token")
+		return
 	}
 
-	if *params.ExpiresInSeconds > 24*60*60 {
-		log.Println("expires_in_seconds too large, set to default 86400 (24hrs)")
-		*params.ExpiresInSeconds = 24 * 60 * 60
+	// Refresh
+	refresh, err := config.generateRefreshToken(user.Id)
+	if err != nil {
+		RespondWithError(writer, 500, fmt.Sprintf("Failed to generate refresh token: %v\n", err))
+		return
 	}
 
-	claims := &jwt.RegisteredClaims{
-		Issuer:    "chirpy",
-		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
-		ExpiresAt: jwt.NewNumericDate(time.Now().UTC().Add(time.Duration(*params.ExpiresInSeconds) * time.Second)),
-		Subject:   fmt.Sprintf("%d", user.Id),
+	response := struct {
+		Id           int    `json:"id"`
+		Email        string `json:"email"`
+		Token        string `json:"token"`
+		RefreshToken string `json:"refresh_token"`
+	}{
+		Id:           user.Id,
+		Email:        user.Email,
+		Token:        tokenStr,
+		RefreshToken: refresh,
 	}
 
-	token := jwt.NewWithClaims(
-		jwt.SigningMethodHS256,
-		claims,
-	)
+	RespondWithJSON(writer, 200, response)
+}
 
-	tokenStr, err := token.SignedString([]byte(config.JWTSecret))
+func (config *ApiConfig) PostRefreshHandler(writer http.ResponseWriter, req *http.Request) {
+	refresh, err := ExtractAuthorization(req)
+	if err != nil {
+		RespondWithError(writer, 401, "Unauthorized")
+		return
+	}
+
+	id, err := config.DB.ValidateRefreshToken(refresh)
+	if err != nil {
+		RespondWithError(writer, 401, "Unauthorized")
+		return
+	}
+
+	jwtToken, err := config.generateJWTToken(id)
 	if err != nil {
 		RespondWithError(writer, 500, "Failed to create JWT string token")
 		return
 	}
 
 	response := struct {
-		Id    int    `json:"id"`
-		Email string `json:"email"`
 		Token string `json:"token"`
 	}{
-		Id:    user.Id,
-		Email: user.Email,
-		Token: tokenStr,
+		Token: jwtToken,
 	}
 
 	RespondWithJSON(writer, 200, response)
+}
+
+func (config *ApiConfig) PostRevokeHandler(writer http.ResponseWriter, req *http.Request) {
+	refresh, err := ExtractAuthorization(req)
+	if err != nil {
+		RespondWithError(writer, 401, "Unauthorized")
+		return
+	}
+
+	_, err = config.DB.ValidateRefreshToken(refresh)
+	if err != nil {
+		RespondWithError(writer, 401, "Unauthorized")
+		return
+	}
+
+	err = config.DB.RevokeRefreshToken(refresh)
+	if err != nil {
+		RespondWithError(writer, 500, fmt.Sprintf("Failed to revoke refresh token: %s\n", err.Error()))
+		return
+	}
+
+	writer.WriteHeader(204)
 }
 
 func (config *ApiConfig) PostUsersHandler(writer http.ResponseWriter, req *http.Request) {
@@ -141,14 +174,11 @@ func (config *ApiConfig) PostUsersHandler(writer http.ResponseWriter, req *http.
 }
 
 func (config *ApiConfig) PutUsersHandler(writer http.ResponseWriter, req *http.Request) {
-	tokenSplit := strings.Split(req.Header.Get("Authorization"), " ")
-
-	if len(tokenSplit) != 2 {
+	tokenStr, err := ExtractAuthorization(req)
+	if err != nil {
 		RespondWithError(writer, 401, "Unauthorized")
 		return
 	}
-
-	tokenStr := tokenSplit[1]
 
 	token, err := jwt.ParseWithClaims(tokenStr, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(config.JWTSecret), nil
