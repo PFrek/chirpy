@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -148,4 +149,30 @@ func ExtractAuthorization(req *http.Request) (string, error) {
 
 	tokenStr := tokenSplit[1]
 	return tokenStr, nil
+}
+
+func (config *ApiConfig) AuthenticateRequest(req *http.Request) (int, error) {
+	tokenStr, err := ExtractAuthorization(req)
+	if err != nil {
+		return 0, errors.New("Unauthorized")
+	}
+
+	token, err := jwt.ParseWithClaims(tokenStr, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(config.JWTSecret), nil
+	})
+	if err != nil {
+		return 0, errors.New("Unauthorized")
+	}
+
+	idStr, err := token.Claims.GetSubject()
+	if err != nil {
+		return 0, errors.New("Unauthorized")
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return 0, errors.New("Unauthorized")
+	}
+
+	return id, nil
 }

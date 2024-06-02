@@ -9,7 +9,6 @@ import (
 	"strconv"
 
 	"github.com/PFrek/chirpy/db"
-	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -174,28 +173,9 @@ func (config *ApiConfig) PostUsersHandler(writer http.ResponseWriter, req *http.
 }
 
 func (config *ApiConfig) PutUsersHandler(writer http.ResponseWriter, req *http.Request) {
-	tokenStr, err := ExtractAuthorization(req)
+	id, err := config.AuthenticateRequest(req)
 	if err != nil {
-		RespondWithError(writer, 401, "Unauthorized")
-		return
-	}
-
-	token, err := jwt.ParseWithClaims(tokenStr, &jwt.RegisteredClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(config.JWTSecret), nil
-	})
-	if err != nil {
-		RespondWithError(writer, 401, "Unauthorized")
-		return
-	}
-
-	idStr, err := token.Claims.GetSubject()
-	if err != nil {
-		RespondWithError(writer, 401, "Unauthorized")
-	}
-
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		RespondWithError(writer, 401, "Unauthorized")
+		RespondWithError(writer, 401, err.Error())
 	}
 
 	type parameters struct {

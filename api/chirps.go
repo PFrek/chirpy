@@ -10,13 +10,19 @@ import (
 )
 
 func (config *ApiConfig) PostChirpsHandler(writer http.ResponseWriter, req *http.Request) {
+	id, err := config.AuthenticateRequest(req)
+	if err != nil {
+		RespondWithError(writer, 401, err.Error())
+		return
+	}
+
 	type parameters struct {
 		Body string `json:"body"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
 	params := parameters{}
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		log.Printf("Error decoding parameters: %s", err)
 		RespondWithError(writer, 500, "Something went wrong")
@@ -30,7 +36,7 @@ func (config *ApiConfig) PostChirpsHandler(writer http.ResponseWriter, req *http
 
 	cleanedBody := replaceProfaneWords(params.Body)
 
-	chirp, err := config.DB.CreateChirp(cleanedBody)
+	chirp, err := config.DB.CreateChirp(cleanedBody, id)
 	if err != nil {
 		RespondWithError(writer, 500, err.Error())
 		return

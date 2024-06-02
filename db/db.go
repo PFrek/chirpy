@@ -14,8 +14,9 @@ import (
 const DB_PATH = "database.json"
 
 type Chirp struct {
-	Id   int    `json:"id"`
-	Body string `json:"body"`
+	Id       int    `json:"id"`
+	Body     string `json:"body"`
+	AuthorId int    `json:"author_id"`
 }
 
 type User struct {
@@ -205,7 +206,7 @@ func (db *DB) RevokeRefreshToken(token string) error {
 	return nil
 }
 
-func (db *DB) CreateChirp(body string) (Chirp, error) {
+func (db *DB) CreateChirp(body string, authorId int) (Chirp, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -215,8 +216,9 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 	}
 
 	chirp := Chirp{
-		Id:   dbStruct.getNextChirpId(),
-		Body: body,
+		Id:       dbStruct.getNextChirpId(),
+		Body:     body,
+		AuthorId: authorId,
 	}
 
 	dbStruct.Chirps[chirp.Id] = chirp
