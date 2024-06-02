@@ -275,6 +275,25 @@ func (db *DB) GetChirpById(id int) (Chirp, error) {
 	return *chirp, nil
 }
 
+func (db *DB) DeleteChirp(id int) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+
+	delete(dbStruct.Chirps, id)
+
+	err = db.writeDB(*dbStruct)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (db *DB) CreateUser(email string, password string) (User, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
