@@ -41,6 +41,22 @@ func (filters ChirpFilter) testBodyContains(body string) bool {
 	return strings.Contains(body, *filters.Contains)
 }
 
+type ChirpSorter struct {
+	Order *string
+}
+
+func (sorter ChirpSorter) sort(a, b Chirp) int {
+	if sorter.Order == nil || *sorter.Order != "desc" {
+		return cmp.Compare(a.Id, b.Id)
+	}
+
+	return cmp.Compare(b.Id, a.Id)
+}
+
+func (sorter ChirpSorter) sortChirps(chirps []Chirp) {
+	slices.SortFunc(chirps, sorter.sort)
+}
+
 type User struct {
 	Id          int    `json:"id"`
 	Email       string `json:"email"`
@@ -258,7 +274,7 @@ func (db *DB) CreateChirp(body string, authorId int) (Chirp, error) {
 	return chirp, nil
 }
 
-func (db *DB) GetChirps(filters ChirpFilter) ([]Chirp, error) {
+func (db *DB) GetChirps(filters ChirpFilter, sorter ChirpSorter) ([]Chirp, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -277,9 +293,7 @@ func (db *DB) GetChirps(filters ChirpFilter) ([]Chirp, error) {
 		}
 	}
 
-	slices.SortFunc(chirps, func(a, b Chirp) int {
-		return cmp.Compare(a.Id, b.Id)
-	})
+	sorter.sortChirps(chirps)
 
 	return chirps, nil
 }

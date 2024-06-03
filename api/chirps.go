@@ -11,7 +11,11 @@ import (
 
 type extractor[T comparable] func(string) (T, error)
 
-func extractFilter[T comparable](name string, req *http.Request, ex extractor[T]) *T {
+func noOpString(query string) (string, error) {
+	return query, nil
+}
+
+func extractQuery[T comparable](name string, req *http.Request, ex extractor[T]) *T {
 	var filter *T
 	val, err := ex(req.URL.Query().Get(name))
 	if err == nil {
@@ -24,8 +28,14 @@ func extractFilter[T comparable](name string, req *http.Request, ex extractor[T]
 
 func createChirpFilters(req *http.Request) db.ChirpFilter {
 	return db.ChirpFilter{
-		AuthorId: extractFilter("author_id", req, strconv.Atoi),
-		Contains: extractFilter("contains", req, func(s string) (string, error) { return s, nil }),
+		AuthorId: extractQuery("author_id", req, strconv.Atoi),
+		Contains: extractQuery("contains", req, noOpString),
+	}
+}
+
+func createChirpSorter(req *http.Request) db.ChirpSorter {
+	return db.ChirpSorter{
+		Order: extractQuery("sort", req, noOpString),
 	}
 }
 
@@ -65,8 +75,9 @@ func (config *ApiConfig) PostChirpsHandler(writer http.ResponseWriter, req *http
 
 func (config *ApiConfig) GetChirpsHandler(writer http.ResponseWriter, req *http.Request) {
 	chirpFilters := createChirpFilters(req)
+	chirpSorter := createChirpSorter(req)
 
-	chirps, err := config.DB.GetChirps(chirpFilters)
+	chirps, err := config.DB.GetChirps(chirpFilters, chirpSorter)
 	if err != nil {
 		RespondWithError(writer, 400, err.Error())
 		return
