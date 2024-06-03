@@ -1,10 +1,8 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 
@@ -12,9 +10,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-type UserResponse struct {
-	Id    int    `json:"id"`
-	Email string `json:"email"`
+type ResponseUser struct {
+	Id          int    `json:"id"`
+	Email       string `json:"email"`
+	IsChirpyRed bool   `json:"is_chirpy_red"`
 }
 
 func (config *ApiConfig) PostLoginHandler(writer http.ResponseWriter, req *http.Request) {
@@ -23,12 +22,10 @@ func (config *ApiConfig) PostLoginHandler(writer http.ResponseWriter, req *http.
 		Email    string `json:"email"`
 	}
 
-	decoder := json.NewDecoder(req.Body)
 	params := parameters{}
-	err := decoder.Decode(&params)
+	err := ExtractBody(&params, req)
 	if err != nil {
-		log.Printf("Error decoding parameters: %s", err)
-		RespondWithError(writer, 500, "Something went wrong")
+		RespondWithError(writer, 500, err.Error())
 		return
 	}
 
@@ -66,11 +63,13 @@ func (config *ApiConfig) PostLoginHandler(writer http.ResponseWriter, req *http.
 	response := struct {
 		Id           int    `json:"id"`
 		Email        string `json:"email"`
+		IsChirpyRed  bool   `json:"is_chirpy_red"`
 		Token        string `json:"token"`
 		RefreshToken string `json:"refresh_token"`
 	}{
 		Id:           user.Id,
 		Email:        user.Email,
+		IsChirpyRed:  user.IsChirpyRed,
 		Token:        tokenStr,
 		RefreshToken: refresh,
 	}
@@ -134,12 +133,10 @@ func (config *ApiConfig) PostUsersHandler(writer http.ResponseWriter, req *http.
 		Email    string `json:"email"`
 	}
 
-	decoder := json.NewDecoder(req.Body)
 	params := parameters{}
-	err := decoder.Decode(&params)
+	err := ExtractBody(&params, req)
 	if err != nil {
-		log.Printf("Error decoding parameters: %s", err)
-		RespondWithError(writer, 400, "Invalid request body")
+		RespondWithError(writer, 400, err.Error())
 		return
 	}
 
@@ -164,9 +161,10 @@ func (config *ApiConfig) PostUsersHandler(writer http.ResponseWriter, req *http.
 		return
 	}
 
-	responseUser := UserResponse{
-		Id:    user.Id,
-		Email: user.Email,
+	responseUser := ResponseUser{
+		Id:          user.Id,
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	}
 
 	RespondWithJSON(writer, 201, responseUser)
@@ -183,12 +181,10 @@ func (config *ApiConfig) PutUsersHandler(writer http.ResponseWriter, req *http.R
 		Email    string `json:"email"`
 	}
 
-	decoder := json.NewDecoder(req.Body)
 	params := parameters{}
-	err = decoder.Decode(&params)
+	err = ExtractBody(&params, req)
 	if err != nil {
-		log.Printf("Error decoding parameters: %s", err)
-		RespondWithError(writer, 400, "Invalid request body")
+		RespondWithError(writer, 400, err.Error())
 		return
 	}
 
@@ -218,9 +214,10 @@ func (config *ApiConfig) PutUsersHandler(writer http.ResponseWriter, req *http.R
 		return
 	}
 
-	responseUser := UserResponse{
-		Id:    user.Id,
-		Email: user.Email,
+	responseUser := ResponseUser{
+		Id:          user.Id,
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	}
 
 	RespondWithJSON(writer, 200, responseUser)
@@ -233,11 +230,12 @@ func (config *ApiConfig) GetUsersHandler(writer http.ResponseWriter, req *http.R
 		return
 	}
 
-	responseUsers := []UserResponse{}
+	responseUsers := []ResponseUser{}
 	for _, user := range users {
-		responseUsers = append(responseUsers, UserResponse{
-			Id:    user.Id,
-			Email: user.Email,
+		responseUsers = append(responseUsers, ResponseUser{
+			Id:          user.Id,
+			Email:       user.Email,
+			IsChirpyRed: user.IsChirpyRed,
 		})
 	}
 
@@ -262,9 +260,10 @@ func (config *ApiConfig) GetUserHandler(writer http.ResponseWriter, req *http.Re
 		return
 	}
 
-	responseUser := UserResponse{
-		Id:    user.Id,
-		Email: user.Email,
+	responseUser := ResponseUser{
+		Id:          user.Id,
+		Email:       user.Email,
+		IsChirpyRed: user.IsChirpyRed,
 	}
 
 	RespondWithJSON(writer, 200, responseUser)

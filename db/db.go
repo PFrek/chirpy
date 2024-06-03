@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,10 +20,32 @@ type Chirp struct {
 	AuthorId int    `json:"author_id"`
 }
 
+type ChirpFilter struct {
+	AuthorId *int
+	Contains *string
+}
+
+func (filters ChirpFilter) testAuthorId(id int) bool {
+	if filters.AuthorId == nil {
+		return true
+	}
+
+	return id == *filters.AuthorId
+}
+
+func (filters ChirpFilter) testBodyContains(body string) bool {
+	if filters.Contains == nil {
+		return true
+	}
+
+	return strings.Contains(body, *filters.Contains)
+}
+
 type User struct {
-	Id       int    `json:"id"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Id          int    `json:"id"`
+	Email       string `json:"email"`
+	Password    string `json:"password"`
+	IsChirpyRed bool   `json:"is_chirpy_red"`
 }
 
 type RefreshToken struct {
@@ -143,6 +166,8 @@ func (db *DB) writeDB(dbStruct DBStructure) error {
 	return nil
 }
 
+// REFRESH TOKENS
+
 func (db *DB) CreateRefreshToken(token string, id int) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -206,6 +231,8 @@ func (db *DB) RevokeRefreshToken(token string) error {
 	return nil
 }
 
+// CHIRPS
+
 func (db *DB) CreateChirp(body string, authorId int) (Chirp, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -231,7 +258,7 @@ func (db *DB) CreateChirp(body string, authorId int) (Chirp, error) {
 	return chirp, nil
 }
 
-func (db *DB) GetChirps() ([]Chirp, error) {
+func (db *DB) GetChirps(filters ChirpFilter) ([]Chirp, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -242,7 +269,12 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 
 	chirps := []Chirp{}
 	for _, chirp := range dbStruct.Chirps {
-		chirps = append(chirps, chirp)
+		match := filters.testAuthorId(chirp.AuthorId)
+		match = match && filters.testBodyContains(chirp.Body)
+
+		if match {
+			chirps = append(chirps, chirp)
+		}
 	}
 
 	slices.SortFunc(chirps, func(a, b Chirp) int {
@@ -294,6 +326,8 @@ func (db *DB) DeleteChirp(id int) error {
 	return nil
 }
 
+// USERS
+
 func (db *DB) CreateUser(email string, password string) (User, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -310,9 +344,10 @@ func (db *DB) CreateUser(email string, password string) (User, error) {
 	}
 
 	user := User{
-		Id:       dbStruct.getNextUserId(),
-		Email:    email,
-		Password: password,
+		Id:          dbStruct.getNextUserId(),
+		Email:       email,
+		Password:    password,
+		IsChirpyRed: false,
 	}
 
 	dbStruct.Users[user.Id] = user
@@ -322,15 +357,10 @@ func (db *DB) CreateUser(email string, password string) (User, error) {
 		return User{}, err
 	}
 
-	response := User{
-		Id:    user.Id,
-		Email: user.Email,
-	}
-
-	return response, nil
+	return user, nil
 }
 
-func (db *DB) UpdateUser(info User) (User, error) {
+func (db *DB) UpdateUser(user User) (User, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -340,12 +370,12 @@ func (db *DB) UpdateUser(info User) (User, error) {
 	}
 
 	var existingUser *User
-	for _, user := range dbStruct.Users {
-		if user.Id == info.Id {
+	for _, u := range dbStruct.Users {
+		if u.Id == user.Id {
 			existingUser = new(User)
-			existingUser = &user
+			existingUser = &u
 		} else {
-			if user.Email == info.Email {
+			if u.Email == user.Email {
 				return User{}, ExistingEmailError{}
 			}
 		}
@@ -355,19 +385,39 @@ func (db *DB) UpdateUser(info User) (User, error) {
 		return User{}, NotFoundError{"User"}
 	}
 
-	dbStruct.Users[info.Id] = info
+	dbStruct.Users[user.Id] = user
 
 	err = db.writeDB(*dbStruct)
 	if err != nil {
 		return User{}, err
 	}
 
-	response := User{
-		Id:    info.Id,
-		Email: info.Email,
+	return user, nil
+}
+
+func (db *DB) UpgradeUser(id int) (User, error) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	dbStruct, err := db.loadDB()
+	if err != nil {
+		return User{}, err
 	}
 
-	return response, nil
+	existingUser, ok := dbStruct.Users[id]
+	if !ok {
+		return User{}, NotFoundError{"User"}
+	}
+
+	existingUser.IsChirpyRed = true
+	dbStruct.Users[id] = existingUser
+
+	err = db.writeDB(*dbStruct)
+	if err != nil {
+		return User{}, err
+	}
+
+	return existingUser, nil
 }
 
 func (db *DB) GetUsers() ([]User, error) {

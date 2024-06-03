@@ -21,6 +21,7 @@ type ApiConfig struct {
 	fileserverHits int
 	DB             *db.DB
 	JWTSecret      string
+	PolkaKey       string
 }
 
 func (config *ApiConfig) MiddlewareMetricsInc(next http.Handler) http.Handler {
@@ -48,6 +49,17 @@ func (config *ApiConfig) ResetHandler(writer http.ResponseWriter, req *http.Requ
 	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	writer.WriteHeader(200)
 	writer.Write([]byte("Fileserver hits counter reset to 0"))
+}
+
+func ExtractBody(params interface{}, req *http.Request) error {
+	decoder := json.NewDecoder(req.Body)
+	err := decoder.Decode(params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		return fmt.Errorf("Something went wrong: %s", err.Error())
+	}
+
+	return nil
 }
 
 func RespondWithError(writer http.ResponseWriter, code int, msg string) {
@@ -175,4 +187,17 @@ func (config *ApiConfig) AuthenticateRequest(req *http.Request) (int, error) {
 	}
 
 	return id, nil
+}
+
+func (config *ApiConfig) AuthenticatePolkaKey(req *http.Request) error {
+	key, err := ExtractAuthorization(req)
+	if err != nil {
+		return errors.New("Unauthorized")
+	}
+
+	if key != config.PolkaKey {
+		return errors.New("Unauthorized")
+	}
+
+	return nil
 }

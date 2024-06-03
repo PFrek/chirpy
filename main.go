@@ -16,6 +16,7 @@ func main() {
 		log.Fatal("Error loading .env file")
 	}
 	jwtSecret := os.Getenv("JWT_SECRET")
+	polkaKey := os.Getenv("POLKA_KEY")
 
 	const filepathRoot = "."
 	const port = "8080"
@@ -38,6 +39,7 @@ func main() {
 	}
 	apiConfig.DB = db
 	apiConfig.JWTSecret = jwtSecret
+	apiConfig.PolkaKey = polkaKey
 
 	mux := http.NewServeMux()
 	fileserverHandler := http.StripPrefix("/app", http.FileServer(http.Dir(filepathRoot)))
@@ -66,6 +68,9 @@ func main() {
 	mux.HandleFunc("/api/reset", apiConfig.ResetHandler)
 
 	mux.HandleFunc("GET /admin/metrics", apiConfig.MetricsHandler)
+
+	// Webhooks
+	mux.HandleFunc("POST /api/polka/webhooks", apiConfig.PolkaWebhookHandler)
 
 	server := &http.Server{
 		Addr:    ":" + port,

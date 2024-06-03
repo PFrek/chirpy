@@ -1,15 +1,33 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/PFrek/chirpy/db"
 )
+
+type extractor[T comparable] func(string) (T, error)
+
+func extractFilter[T comparable](name string, req *http.Request, ex extractor[T]) *T {
+	var filter *T
+	val, err := ex(req.URL.Query().Get(name))
+	if err == nil {
+		filter = new(T)
+		*filter = val
+	}
+
+	return filter
+}
+
+func createChirpFilters(req *http.Request) db.ChirpFilter {
+	return db.ChirpFilter{
+		AuthorId: extractFilter("author_id", req, strconv.Atoi),
+		Contains: extractFilter("contains", req, func(s string) (string, error) { return s, nil }),
+	}
+}
 
 func (config *ApiConfig) PostChirpsHandler(writer http.ResponseWriter, req *http.Request) {
 	id, err := config.AuthenticateRequest(req)
@@ -22,12 +40,10 @@ func (config *ApiConfig) PostChirpsHandler(writer http.ResponseWriter, req *http
 		Body string `json:"body"`
 	}
 
-	decoder := json.NewDecoder(req.Body)
 	params := parameters{}
-	err = decoder.Decode(&params)
+	err = ExtractBody(&params, req)
 	if err != nil {
-		log.Printf("Error decoding parameters: %s", err)
-		RespondWithError(writer, 500, "Something went wrong")
+		RespondWithError(writer, 500, err.Error())
 		return
 	}
 
@@ -48,7 +64,9 @@ func (config *ApiConfig) PostChirpsHandler(writer http.ResponseWriter, req *http
 }
 
 func (config *ApiConfig) GetChirpsHandler(writer http.ResponseWriter, req *http.Request) {
-	chirps, err := config.DB.GetChirps()
+	chirpFilters := createChirpFilters(req)
+
+	chirps, err := config.DB.GetChirps(chirpFilters)
 	if err != nil {
 		RespondWithError(writer, 400, err.Error())
 		return
